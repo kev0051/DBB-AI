@@ -153,7 +153,7 @@ print("Rendering output directory: ", output_dir)
 
 
 if run_type == 2:
-    batch_size = 1
+    batch_size = 5
 
         
 # FUNCTIONS:
@@ -268,18 +268,19 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
 # Render scene in JPEG format
 def render_scene(it):
     bpy.context.scene.render.image_settings.file_format='JPEG'
-    bpy.context.scene.render.filepath = output_dir_images + "/%0.5d.jpg"%it
+    bpy.context.scene.render.filepath = os.path.join(output_dir_images, f"{guarantee}_%0.5d.jpg" % it)
     bpy.ops.render.render(use_viewport = True, write_still=True)
 
 # Export annotations of boundig boxes in VOC format
 def save_annotations(object, it):
-    writer = Writer(output_dir_images + "/%0.5d.jpg"%it, r_settings.resolution_x, r_settings.resolution_y)
+    # Include guarantee at the start of the file name for image and XML annotation
+    image_file_name = f"{guarantee}_%0.5d.jpg" % it
+    writer = Writer(os.path.join(output_dir_images, image_file_name), r_settings.resolution_x, r_settings.resolution_y)
     if object is not None:
-        bound_x, bound_y, bound_w, bound_h = (camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, object))
+        bound_x, bound_y, bound_w, bound_h = camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, object)
         part_name = str(object.name).split(".", 1)
         writer.addObject(part_name[0], bound_x, bound_y, bound_x+bound_w, bound_y+bound_h)
-    writer.save(output_dir_annotations + "/%0.5d.xml"%it)
-
+    writer.save(os.path.join(output_dir_annotations, f"{guarantee}_%0.5d.xml" % it))
 
 # PROGRAM CODE:
 
@@ -571,9 +572,9 @@ if (run_type == 1 or run_type == 2):
 
         render_scene(iii)
         
-        save_annotations(x, start_range)
+        #save_annotations(x, start_range) # WHY IS THIS HERE
 
-        writer = Writer(output_dir_images + "/%0.5d.jpg"%iii, r_settings.resolution_x, r_settings.resolution_y)
+        writer = Writer(output_dir_images + "/" + guarantee + "_%0.5d.jpg" % iii, r_settings.resolution_x, r_settings.resolution_y)
 
         # Save annotations
         for x in objects:
@@ -583,7 +584,7 @@ if (run_type == 1 or run_type == 2):
                 # Save annotations of rectangle around the object: x_min, y_min, x_max, y_max
                 writer.addObject(part_name[0], bound_x, bound_y, bound_x+bound_w, bound_y+bound_h)
                 
-        writer.save(output_dir_annotations + "/%0.5d.xml"%iii)
+        writer.save(output_dir_annotations + "/" + guarantee + "_%0.5d.xml" % iii)
 
 
     # Print out times each Lego object was used
@@ -593,3 +594,4 @@ if (run_type == 1 or run_type == 2):
     # END OF BATCH RENDERING CODE
 
 print("All done.")
+

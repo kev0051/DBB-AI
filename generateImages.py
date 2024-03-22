@@ -20,7 +20,7 @@ import os
 # For me Blender crashes if more than 600 renderings generated in one script run.
 
 run_type = 2
-guarantee = "99773 (6009019)"
+guarantee = "val"
 
 num = 255 
 colors = []
@@ -131,7 +131,11 @@ colorsDict={"10928 (6012451)": 0,
             "94925 (4640536)": 3,
             "99009 (4652235)": 3,
             "99010 (6326620)": 0,
-            "99773 (6009019)": 3}
+            "99773 (6009019)": 3,
+            "3648 (6133119)": 8,
+            "43093 (4206482)": 6,
+            "55615 (6313453)": 3,
+            "87082 (6321303)": 3}
 
 # Set output resolution
 r_settings = bpy.context.scene.render
@@ -153,7 +157,7 @@ print("Rendering output directory: ", output_dir)
 
 
 if run_type == 2:
-    batch_size = 5
+    batch_size = 1
 
         
 # FUNCTIONS:
@@ -268,19 +272,38 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
 # Render scene in JPEG format
 def render_scene(it):
     bpy.context.scene.render.image_settings.file_format='JPEG'
-    bpy.context.scene.render.filepath = os.path.join(output_dir_images, f"{guarantee}_%0.5d.jpg" % it)
+    bpy.context.scene.render.filepath = os.path.join(output_dir_images, f"{guarantee}_%0.6d.jpg" % it)
+    bpy.ops.render.render(use_viewport = True, write_still=True)
+    
+def render_scene_indiv(it, name):
+    bpy.context.scene.render.image_settings.file_format='JPEG'
+    bpy.context.scene.render.filepath = os.path.join(output_dir_images, f"{name}_%0.6d.jpg" % it)
+    bpy.ops.render.render(use_viewport = True, write_still=True)
+    
+def render_scene_bg(it):
+    bpy.context.scene.render.image_settings.file_format='JPEG'
+    bpy.context.scene.render.filepath = output_dir_images + "/%0.6d.jpg"%it
     bpy.ops.render.render(use_viewport = True, write_still=True)
 
 # Export annotations of boundig boxes in VOC format
-def save_annotations(object, it):
+def save_annotations(object, it, name):
     # Include guarantee at the start of the file name for image and XML annotation
-    image_file_name = f"{guarantee}_%0.5d.jpg" % it
+    image_file_name = f"{name}_%0.6d.jpg" % it
     writer = Writer(os.path.join(output_dir_images, image_file_name), r_settings.resolution_x, r_settings.resolution_y)
     if object is not None:
         bound_x, bound_y, bound_w, bound_h = camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, object)
         part_name = str(object.name).split(".", 1)
         writer.addObject(part_name[0], bound_x, bound_y, bound_x+bound_w, bound_y+bound_h)
-    writer.save(os.path.join(output_dir_annotations, f"{guarantee}_%0.5d.xml" % it))
+    writer.save(os.path.join(output_dir_annotations, f"{name}_%0.6d.xml" % it))
+    
+# Export annotations of bounding boxes in VOC format (background)
+def save_annotations_bg(object, it):
+    writer = Writer(output_dir_images + "/%0.6d.jpg"%it, r_settings.resolution_x, r_settings.resolution_y)
+    if object is not None:
+        bound_x, bound_y, bound_w, bound_h = (camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, object))
+        part_name = str(object.name).split(".", 1)
+        writer.addObject(part_name[0], bound_x, bound_y, bound_x+bound_w, bound_y+bound_h)
+    writer.save(output_dir_annotations + "/%0.6d.xml"%it)
 
 # PROGRAM CODE:
 
@@ -358,8 +381,8 @@ if (run_type == 1 or run_type == 4):
             bg.hide_set(False) # Unhide one background
             bg.hide_render = False # Make it visible in renderings
 
-            render_scene(start_range)
-            save_annotations(None, start_range) # No object to annotate so passing None
+            render_scene_bg(start_range)
+            save_annotations_bg(None, start_range) # No object to annotate so passing None
             
             start_range += 1
             
@@ -370,9 +393,9 @@ if (run_type == 1 or run_type == 4):
 # Render individual parts rotated around all axes
 if (run_type == 1 or run_type == 3):
     # Set camera to default location for rendering individual parts
-    bpy.data.objects['Camera'].location = (0,0,5)
+    bpy.data.objects['Camera'].location = (0,0,10)
     bpy.data.objects['Camera'].rotation_euler = (0,0,0)
-    update_camera(bpy.data.objects['Camera'],focus_point=mathutils.Vector((0.0, -1.0, 0)), distance=2.5)
+    update_camera(bpy.data.objects['Camera'],focus_point=mathutils.Vector((0.0, -1.0, 0)), distance=5.0)
 
     for x in objects: 
         # Check if the part is not a dublicate so not to render twise same parts. Duplicates have suffix ".001"
@@ -380,6 +403,9 @@ if (run_type == 1 or run_type == 3):
             x.hide_set(False)
             x.hide_render = False
             x.select_set(True)    
+            
+            # Change scale
+            x.scale = (0.05, 0.05, 0.05)
             
             # Randomise part location a bit
             x.location = (0,0,0.5)
@@ -392,10 +418,12 @@ if (run_type == 1 or run_type == 3):
                 x.rotation_euler = (math.radians(x_or), 0, 0)
                     
                 # Choose material randomly/from dict
-                if x.name in colorsDict:
-                    x.active_material = materials[colorsDict[x.name]]
+                matching_key = next((key for key in colorsDict.keys() if key in x.name), None)
+                if matching_key is not None:
+                    # Use the matching key to set the active material
+                    x.active_material = materials[colorsDict[matching_key]]
                 else:
-                    #r1 = random.randint(0, len(materials)-1) 
+                    # If no matching key is found, use a default material
                     x.active_material = materials[1]
                 
                 # Hide all backgrounds    
@@ -408,8 +436,8 @@ if (run_type == 1 or run_type == 3):
                 background[r3].hide_set(False)
                 background[r3].hide_render = False     
                    
-                render_scene(start_range)
-                save_annotations(x, start_range)
+                render_scene_indiv(start_range, x.name)
+                save_annotations(x, start_range, x.name)
             
                 # Reset orientation & randommise location of the object
                 x.location = (round(random.uniform(-0.15, 0.15), 4), round(random.uniform(-0.15, 0.15), 4), 0.5)
@@ -428,8 +456,13 @@ if (run_type == 1 or run_type == 3):
                 
                 x.rotation_euler = (0, math.radians(y_or), 0)
                 
-                r1 = random.randint(0, len(materials)-1) 
-                x.active_material = materials[r1]
+                matching_key = next((key for key in colorsDict.keys() if key in x.name), None)
+                if matching_key is not None:
+                    # Use the matching key to set the active material
+                    x.active_material = materials[colorsDict[matching_key]]
+                else:
+                    # If no matching key is found, use a default material
+                    x.active_material = materials[1]
                 
                 for bg in background:
                     bg.hide_set(True)
@@ -439,8 +472,8 @@ if (run_type == 1 or run_type == 3):
                 background[r3].hide_set(False)
                 background[r3].hide_render = False     
                     
-                render_scene(start_range)
-                save_annotations(x, start_range)
+                render_scene_indiv(start_range, x.name)
+                save_annotations(x, start_range, x.name)
                 
                 x.location = (round(random.uniform(-0.15, 0.15), 4), round(random.uniform(-0.15, 0.15), 4), 0.5)
                 x.rotation_euler = (0, 0, 0)
@@ -457,8 +490,13 @@ if (run_type == 1 or run_type == 3):
                 
                 x.rotation_euler = (0, 0, math.radians(z_or))
          
-                r1 = random.randint(0, len(materials)-1) 
-                x.active_material = materials[r1]
+                matching_key = next((key for key in colorsDict.keys() if key in x.name), None)
+                if matching_key is not None:
+                    # Use the matching key to set the active material
+                    x.active_material = materials[colorsDict[matching_key]]
+                else:
+                    # If no matching key is found, use a default material
+                    x.active_material = materials[1]
                 
                 for bg in background:
                     bg.hide_set(True)
@@ -468,8 +506,8 @@ if (run_type == 1 or run_type == 3):
                 background[r3].hide_set(False)
                 background[r3].hide_render = False     
 
-                render_scene(start_range)
-                save_annotations(x, start_range)
+                render_scene_indiv(start_range, x.name)
+                save_annotations(x, start_range, x.name)
                 
                 x.location = (round(random.uniform(-0.15, 0.15), 4), round(random.uniform(-0.15, 0.15), 4), 0.5)
                 x.rotation_euler = (0, 0, 0)
@@ -480,118 +518,122 @@ if (run_type == 1 or run_type == 3):
             # Hide the part after finished rendering it's set
             x.hide_set(True)
             x.hide_render = True
+            
     # END OF GNEERATING INDIVIDUAL PARTS
 
 if (run_type == 1 or run_type == 2):
 
     # CODE FOR BATCH RENDERING
-    path, dirs, files = next(os.walk(output_dir+"/images"))
-    file_count = len(files)
-    start_range = file_count
-    # start_range = 0 # Modify start_range to start from previous renders of individual parts
-    image_set = start_range + batch_size
-
-    print("Printing batch of images. Start_range from: ", start_range)
     
-    # Deselect all objects
-    for iii in range(start_range,image_set):
+    for y in objects:
+        #guarantee = y.name
+    
+        path, dirs, files = next(os.walk(output_dir+"/images"))
+        file_count = len(files)
+        start_range = file_count
+        # start_range = 0 # Modify start_range to start from previous renders of individual parts
+        image_set = start_range + batch_size
+
+        print("Printing batch of images. Start_range from: ", start_range)
         
-        bpy.ops.object.select_all(action='DESELECT')
-        
-        # Hide all objects
-        for x in objects:
-            x.hide_set(True)
-            x.hide_render = True
+        # Deselect all objects
+        for iii in range(start_range,image_set):
             
-        # Get a maximum number of 5 random lego part objects 
-        specific_part_index = next((i for i, obj in enumerate(objects) if guarantee in obj.name), None)
-
-        # Start with the specific part's index if it exists
-        if specific_part_index is not None:
-            list_of_objects_numbers = [specific_part_index]
-            remaining_selection_count = random.randint(1, 4)  # Adjusted count since one part is already included
-
-            # Sample additional, distinct indices, excluding the specific part's index
-            list_of_objects_numbers += random.sample([i for i in range(len(objects)) if i != specific_part_index], remaining_selection_count)
-        else:
-            # Fallback to original random selection if the specific part was not found
-            list_of_objects_numbers = random.sample(range(len(objects)), random.randint(2, 5))      
-        print("Lego parts selected: ", list_of_objects_numbers)
-
-        for obj_num in list_of_objects_numbers: 
-            r1 = random.randint(0, len(materials)-1) 
-            r2 = random.randint(0,1) # random number to decide in the part is in the scene
+            bpy.ops.object.select_all(action='DESELECT')
             
-            x = objects[obj_num]
-
-        # Unhide and select lego object that's in the list
-            x.hide_set(False)
-            x.hide_render = False
-            x.select_set(True)
-            
-        # Set scale to 0.05 x 0.05 x 0.05
-            x.scale = (0.05, 0.05, 0.05)
-
-        # Move lego object to a random location within given constriants
-            x.location = (round(random.uniform(-1.5, 1.5), 2), round(random.uniform(-1.5, 1.5), 2), 0.5)
-
-            # Lego orientation randomisation
-            x.rotation_euler = (math.radians(random.randint(0,180)), math.radians(random.randint(0,180)), math.radians(random.randint(0,180)))
-
-            # Lego material randomisation
-            # Check if any part of x.name matches a key in colorsDict
-            matching_key = next((key for key in colorsDict.keys() if key in x.name), None)
-            if matching_key is not None:
-                # Use the matching key to set the active material
-                x.active_material = materials[colorsDict[matching_key]]
-            else:
-                # If no matching key is found, use a default material
-                x.active_material = materials[1]
-            
-        # Update lego part counting table
-        cc = 0
-        for x in objects:
-            if x.hide_render == False:
-                object_count[cc][1] += 1
-            cc += 1
-            
-            
-        # Background randomisation
-        # Hide all backgrounds
-        for bg in background:
-            bg.hide_set(True)
-            bg.hide_render = True
-        
-        # unhide one background randomly
-        r3 = random.randint(0,len(background)-1)
-        background[r3].hide_set(False)
-        background[r3].hide_render = False      
-            
-        # Fit camera scene within the objects
-        bpy.ops.view3d.camera_to_view_selected()
-
-        render_scene(iii)
-        
-        #save_annotations(x, start_range) # WHY IS THIS HERE
-
-        writer = Writer(output_dir_images + "/" + guarantee + "_%0.5d.jpg" % iii, r_settings.resolution_x, r_settings.resolution_y)
-
-        # Save annotations
-        for x in objects:
-            if x.hide_render == False:
-                bound_x, bound_y, bound_w, bound_h = (camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, x))
-                part_name = str(x.name).split(".", 1)
-                # Save annotations of rectangle around the object: x_min, y_min, x_max, y_max
-                writer.addObject(part_name[0], bound_x, bound_y, bound_x+bound_w, bound_y+bound_h)
+            # Hide all objects
+            for x in objects:
+                x.hide_set(True)
+                x.hide_render = True
                 
-        writer.save(output_dir_annotations + "/" + guarantee + "_%0.5d.xml" % iii)
+            # Get a maximum number of 5 random lego part objects 
+            specific_part_index = next((i for i, obj in enumerate(objects) if guarantee in obj.name), None)
 
+            # Start with the specific part's index if it exists
+            if specific_part_index is not None:
+                list_of_objects_numbers = [specific_part_index]
+                remaining_selection_count = random.randint(1, 4)  # Adjusted count since one part is already included
 
-    # Print out times each Lego object was used
-    print("Object count: ")
-    for cc in object_count:
-        print(cc)
-    # END OF BATCH RENDERING CODE
+                # Sample additional, distinct indices, excluding the specific part's index
+                list_of_objects_numbers += random.sample([i for i in range(len(objects)) if i != specific_part_index], remaining_selection_count)
+            else:
+                # Fallback to original random selection if the specific part was not found
+                list_of_objects_numbers = random.sample(range(len(objects)), random.randint(2, 5))      
+            print("Lego parts selected: ", list_of_objects_numbers)
+
+            for obj_num in list_of_objects_numbers: 
+                r1 = random.randint(0, len(materials)-1) 
+                r2 = random.randint(0,1) # random number to decide in the part is in the scene
+                
+                x = objects[obj_num]
+
+            # Unhide and select lego object that's in the list
+                x.hide_set(False)
+                x.hide_render = False
+                x.select_set(True)
+                
+            # Set scale to 0.05 x 0.05 x 0.05
+                x.scale = (0.05, 0.05, 0.05)
+
+            # Move lego object to a random location within given constriants
+                x.location = (round(random.uniform(-1.5, 1.5), 2), round(random.uniform(-1.5, 1.5), 2), 0.5)
+
+                # Lego orientation randomisation
+                x.rotation_euler = (math.radians(random.randint(0,180)), math.radians(random.randint(0,180)), math.radians(random.randint(0,180)))
+
+                # Lego material randomisation
+                # Check if any part of x.name matches a key in colorsDict
+                matching_key = next((key for key in colorsDict.keys() if key in x.name), None)
+                if matching_key is not None:
+                    # Use the matching key to set the active material
+                    x.active_material = materials[colorsDict[matching_key]]
+                else:
+                    # If no matching key is found, use a default material
+                    x.active_material = materials[1]
+                
+            # Update lego part counting table
+            cc = 0
+            for x in objects:
+                if x.hide_render == False:
+                    object_count[cc][1] += 1
+                cc += 1
+                
+                
+            # Background randomisation
+            # Hide all backgrounds
+            for bg in background:
+                bg.hide_set(True)
+                bg.hide_render = True
+            
+            # unhide one background randomly
+            r3 = random.randint(0,len(background)-1)
+            background[r3].hide_set(False)
+            background[r3].hide_render = False      
+                
+            # Fit camera scene within the objects
+            bpy.ops.view3d.camera_to_view_selected()
+
+            render_scene(iii)
+            
+            #save_annotations(x, start_range) # WHY IS THIS HERE
+
+            writer = Writer(output_dir_images + "/" + guarantee + "_%0.6d.jpg" % iii, r_settings.resolution_x, r_settings.resolution_y)
+
+            # Save annotations
+            for x in objects:
+                if x.hide_render == False:
+                    bound_x, bound_y, bound_w, bound_h = (camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, x))
+                    part_name = str(x.name).split(".", 1)
+                    # Save annotations of rectangle around the object: x_min, y_min, x_max, y_max
+                    writer.addObject(part_name[0], bound_x, bound_y, bound_x+bound_w, bound_y+bound_h)
+                    
+            writer.save(output_dir_annotations + "/" + guarantee + "_%0.6d.xml" % iii)
+        break
+
+        # Print out times each Lego object was used
+        print("Object count: ")
+        for cc in object_count:
+            print(cc)
+        # END OF BATCH RENDERING CODE
 
 print("All done.")
-
